@@ -10,6 +10,7 @@ import org.apache.commons.cli.ParseException;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 
 import rw2018.statistics.impl.StatisticsDBBaseImpl;
 import rw2018.statistics.io.EncodedFileInputStream;
@@ -34,28 +35,23 @@ public class Main {
     }
 
     // TODO adjust to your implementation
-    StatisticsDB statisticsDB = new StatisticsDBBaseImpl();
+    try (StatisticsDB statisticsDB = new StatisticsDBBaseImpl();) {
+      statisticsDB.setUp(statisticsDir, chunks.length);
 
-    Runtime.getRuntime().addShutdownHook(new Thread() {
-      @Override
-      public void run() {
-        statisticsDB.close();
-      }
-    });
-    statisticsDB.setUp(statisticsDir, chunks.length);
-
-    for (int chunkI = 0; chunkI < chunks.length; chunkI++) {
-      File chunk = chunks[chunkI];
-      try (EncodedFileInputStream input = new EncodedFileInputStream(EncodingFileFormat.EEE,
-              chunk);) {
-        for (Statement stmt : input) {
-          statisticsDB.incrementFrequency(stmt.getSubjectAsLong(), chunkI, TriplePosition.SUBJECT);
-          statisticsDB.incrementFrequency(stmt.getPropertyAsLong(), chunkI,
-                  TriplePosition.PROPERTY);
-          statisticsDB.incrementFrequency(stmt.getObjectAsLong(), chunkI, TriplePosition.OBJECT);
+      for (int chunkI = 0; chunkI < chunks.length; chunkI++) {
+        File chunk = chunks[chunkI];
+        try (EncodedFileInputStream input = new EncodedFileInputStream(EncodingFileFormat.EEE,
+                chunk);) {
+          for (Statement stmt : input) {
+            statisticsDB.incrementFrequency(stmt.getSubjectAsLong(), chunkI,
+                    TriplePosition.SUBJECT);
+            statisticsDB.incrementFrequency(stmt.getPropertyAsLong(), chunkI,
+                    TriplePosition.PROPERTY);
+            statisticsDB.incrementFrequency(stmt.getObjectAsLong(), chunkI, TriplePosition.OBJECT);
+          }
+        } catch (IOException e) {
+          throw new RuntimeException(e);
         }
-      } catch (IOException e) {
-        throw new RuntimeException(e);
       }
     }
   }
@@ -88,7 +84,9 @@ public class Main {
       File workingDir = new File(cLine.getOptionValue('w'));
       File inputDir = new File(cLine.getOptionValue('i'));
 
-      Main.collectStatistics(workingDir, inputDir.listFiles());
+      File[] chunks = inputDir.listFiles();
+      Arrays.sort(chunks);
+      Main.collectStatistics(workingDir, chunks);
 
     } catch (ParseException e) {
       Main.printUsage(options);
