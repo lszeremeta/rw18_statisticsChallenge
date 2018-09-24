@@ -13,20 +13,21 @@ import rw2018.statistics.TriplePosition;
 public class StatisticsDBImpl extends StatisticsDBBaseImpl {
 
 
-  private RandomAccessFile subj;
-  private RandomAccessFile pred;
-  private RandomAccessFile obj;
-
   private RandomAccessFile[] positional = {};
+  private int positionalBytes[] = {1, 1, 1};
+  private long lastId[] = {0, 0, 0};
+  private File dir;
 
   @Override
   public void setUp(File statisticsDir, int numberOfChunks) {
+    dir = statisticsDir;
     statisticsDir.mkdirs();
     try {
-      subj = new RandomAccessFile(new File(statisticsDir, "subj"), "rw");
-      pred = new RandomAccessFile(new File(statisticsDir, "pred"), "rw");
-      obj = new RandomAccessFile(new File(statisticsDir, "obj"), "rw");
-      positional = new RandomAccessFile[]{subj, pred, obj};
+      positional = new RandomAccessFile[]{null, null, null};
+      positional[0] = new RandomAccessFile(new File(statisticsDir, "0.1"), "rw");
+      positional[1] = new RandomAccessFile(new File(statisticsDir, "1.1"), "rw");
+      positional[2] = new RandomAccessFile(new File(statisticsDir, "2.1"), "rw");
+
     } catch (FileNotFoundException e) {
       e.printStackTrace();
     }
@@ -35,7 +36,9 @@ public class StatisticsDBImpl extends StatisticsDBBaseImpl {
   @Override
   public void incrementFrequency(long resourceId, int chunkNumber, TriplePosition triplePosition) {
     try {
+      int ordinal = triplePosition.ordinal();
       RandomAccessFile file = seekToPosition(resourceId, chunkNumber, triplePosition);
+      if (file == null) return;
       long value = 0;
       try {
         value = file.readLong();
@@ -53,6 +56,7 @@ public class StatisticsDBImpl extends StatisticsDBBaseImpl {
     RandomAccessFile file = null;
     try {
       file = seekToPosition(resourceId, chunkNumber, triplePosition);
+      if (file == null) return 0;
       long value = 0;
       try {
         value = file.readLong();
@@ -60,14 +64,34 @@ public class StatisticsDBImpl extends StatisticsDBBaseImpl {
       return value;
     } catch (IOException e) {
       e.printStackTrace();
+    } finally {
+      try {
+        if (file != null) file.close();
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
     }
     return 0;
   }
 
   private RandomAccessFile seekToPosition(long resourceId, int chunkNumber, TriplePosition triplePosition) throws IOException {
-    RandomAccessFile file = positional[triplePosition.ordinal()];
-    long sizeOfRow = Long.BYTES * getNumberOfChunks() * getTriplePositions().length;
-    file.seek(sizeOfRow*resourceId + Long.BYTES * chunkNumber);
+    int ordinal = triplePosition.ordinal();
+    RandomAccessFile file = null;
+    for (int i = 0; i < 8; i++) {
+      if (resourceId < (1<<i)) {
+        if (positionalBytes[ordinal] != i) {
+          positional[ordinal].close();
+          positionalBytes[ordinal] = i;
+          positional[ordinal] = file = new RandomAccessFile(new File(dir, String.format("%d.%d", ordinal, i)), "rw");
+        } else {
+          file = positional[ordinal];
+        }
+      }
+    }
+    if (file == null)
+      return null;
+    long sizeOfRow = positionalBytes[ordinal] * getNumberOfChunks() * getTriplePositions().length;
+    file.seek(sizeOfRow*resourceId + positionalBytes[ordinal] * chunkNumber);
     return file;
   }
 
